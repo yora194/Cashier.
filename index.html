@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إدارة المعرض</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f1f5f2;margin:0;color:#24352d}
+header{background:#173b32;color:white;padding:22px;text-align:center}
+nav{display:flex;flex-wrap:wrap;gap:8px;padding:15px;justify-content:center}
+button{background:#245849;color:white;border:0;padding:12px;border-radius:8px;cursor:pointer}
+main{max-width:900px;margin:auto;padding:15px}
+.card{background:white;padding:18px;margin-bottom:15px;border-radius:12px;box-shadow:0 2px 8px #0001}
+input{padding:11px;border:1px solid #ccc;border-radius:7px;width:100%;margin:5px 0 12px}
+table{width:100%;border-collapse:collapse}
+td,th{padding:10px;border-bottom:1px solid #ddd;text-align:right}
+h2{margin-top:0}
+</style>
+</head>
+<body>
+<header>
+<h1>📦 إدارة المعرض</h1>
+<p>المخزن والمبيعات والحسابات</p>
+</header>
+<nav id="nav"></nav>
+<main id="app"></main>
+
+<script>
+const names={
+products:"المخزن والمنتجات",
+sales:"المبيعات والفواتير",
+purchases:"المشتريات",
+customers:"العملاء",
+suppliers:"الموردون",
+expenses:"المصروفات"
+};
+
+let data;
+try {
+ data=JSON.parse(localStorage.getItem("ma3radData"))||{};
+} catch {
+ data={};
+}
+Object.keys(names).forEach(k=>data[k]??=[]);
+
+function save(){
+ localStorage.setItem("ma3radData",JSON.stringify(data));
+}
+
+function money(n){
+ return (Number(n)||0).toLocaleString("ar-EG")+" ج.م";
+}
+
+const nav=document.getElementById("nav");
+Object.entries(names).forEach(([key,name])=>{
+ const b=document.createElement("button");
+ b.textContent=name;
+ b.onclick=()=>show(key);
+ nav.appendChild(b);
+});
+
+function showHome(){
+ document.getElementById("app").innerHTML=`
+ <div class="card">
+ <h2>الرئيسية</h2>
+ <p>عدد المنتجات: ${data.products.length}</p>
+ <p>إجمالي المبيعات: ${money(data.sales.reduce((s,x)=>s+x.total,0))}</p>
+ <p>إجمالي المصروفات: ${money(data.expenses.reduce((s,x)=>s+Number(x.amount),0))}</p>
+ <button onclick="backup()">نسخة احتياطية</button>
+ </div>`;
+}
+
+function show(key){
+ const app=document.getElementById("app");
+ app.innerHTML=`
+ <div class="card">
+ <h2>${names[key]}</h2>
+ <form id="form"></form>
+ </div>
+ <div class="card">
+ <h2>السجلات</h2>
+ <div style="overflow:auto">
+ <table>
+ <thead id="thead"></thead>
+ <tbody id="tbody"></tbody>
+ </table>
+ </div>
+ </div>`;
+
+ const fields={
+ products:[["name","اسم المنتج","text"],["cost","سعر الشراء","number"],["price","سعر البيع","number"],["qty","الكمية","number"]],
+ sales:[["name","اسم المنتج","text"],["qty","الكمية","number"],["price","سعر البيع للوحدة","number"]],
+ purchases:[["name","اسم المنتج","text"],["qty","الكمية","number"],["cost","سعر الشراء للوحدة","number"]],
+ customers:[["name","اسم العميل","text"],["phone","رقم الهاتف","tel"],["balance","المبلغ المستحق","number"]],
+ suppliers:[["name","اسم المورد","text"],["phone","رقم الهاتف","tel"],["balance","المبلغ المستحق","number"]],
+ expenses:[["name","بيان المصروف","text"],["amount","المبلغ","number"]]
+ };
+
+ const form=document.getElementById("form");
+ form.innerHTML=fields[key].map(f=>`
+ <label>${f[1]}</label>
+ <input name="${f[0]}" type="${f[2]}" required>
+ `).join("")+`<button type="submit">إضافة</button>`;
+
+ form.onsubmit=e=>{
+  e.preventDefault();
+  const fd=new FormData(form);
+  const item={};
+  fields[key].forEach(f=>{
+   const v=fd.get(f[0]);
+   item[f[0]]=f[2]==="number"?Number(v):v;
+  });
+
+  if(key==="sales"||key==="purchases"){
+   const product=data.products.find(p=>p.name===item.name);
+   if(!product){
+    alert("أضيفي المنتج إلى المخزن أولاً بنفس الاسم.");
+    return;
+   }
+   if(key==="sales"){
+    if(item.qty>product.qty){
+     alert("الكمية الموجودة في المخزن غير كافية.");
+     return;
+    }
+    product.qty-=item.qty;
+    item.total=item.qty*item.price;
+   }else{
+    product.qty+=item.qty;
+    item.total=item.qty*item.cost;
+   }
+  }
+
+  data[key].push(item);
+  save();
+  show(key);
+ };
+ renderRows(key);
+}
+
+function renderRows(key){
+ const fields={
+ products:[["name","المنتج"],["cost","سعر الشراء"],["price","سعر البيع"],["qty","الكمية"]],
+ sales:[["name","المنتج"],["qty","الكمية"],["total","الإجمالي"]],
+ purchases:[["name","المنتج"],["qty","الكمية"],["total","الإجمالي"]],
+ customers:[["name","العميل"],["phone","الهاتف"],["balance","المستحق"]],
+ suppliers:[["name","المورد"],["phone","الهاتف"],["balance","المستحق"]],
+ expenses:[["name","المصروف"],["amount","المبلغ"]]
+ };
+ document.getElementById("thead").innerHTML=
+ "<tr>"+fields[key].map(f=>`<th>${f[1]}</th>`).join("")+"<th>حذف</th></tr>";
+
+ document.getElementById("tbody").innerHTML=data[key].map((item,i)=>
+ "<tr>"+fields[key].map(f=>{
+  let v=item[f[0]]??"—";
+  if(["cost","price","total","amount","balance"].includes(f[0]))v=money(v);
+  return `<td>${escapeHTML(v)}</td>`;
+ }).join("")+
+ `<td><button onclick="removeItem('${key}',${i})">حذف</button></td></tr>`
+ ).join("");
+}
+
+function escapeHTML(value){
+ return String(value).replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ })[c]);
+}
+
+function removeItem(key,i){
+ if(confirm("حذف السجل؟")){
+  data[key].splice(i,1);
+  save();
+  show(key);
+ }
+}
+
+function backup(){
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="ma3rad-backup.json";
+ a.click();
+ URL.revokeObjectURL(a.href);
+}
+
+showHome();
+</script>
+</body>
+</html>
